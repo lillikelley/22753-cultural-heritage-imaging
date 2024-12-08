@@ -24,11 +24,10 @@ This project aims to automate an imaging process using an Arduino to control mul
 - **Arduino Control**: Manages light states (on/off) for multiple lights.
 - **Image Capture**: Integrates with the FLIR Blackfly 3 camera using the Spinnaker SDK.
 - **Serial Communication**: Uses Python to send and receive commands from Arduino.
-- **Modular Code Structure**: Clean separation of functionalities with header and source files.
 
 ## Hardware Requirements
 
-- Arduino Board (e.g., Arduino Uno)
+- Arduino Board (e.g., Arduino Nano, Seeeduino Nano Development Board)
 - FLIR Blackfly 3 Camera
 - LEDs or lights controlled by the Arduino
 - USB cables for Arduino and camera
@@ -36,7 +35,7 @@ This project aims to automate an imaging process using an Arduino to control mul
 ## Software Requirements
 
 - [Arduino IDE](https://www.arduino.cc/en/software) to upload the sketch to the Arduino.
-- Python 3.7+
+- Python 3.10 (due to Spinnaker Python SDK version support)
 - [PySerial](https://pythonhosted.org/pyserial/) library
 - [PySpin](https://github.com/Teledyne-MV/Spinnaker-Examples) library
 
@@ -44,7 +43,7 @@ This project aims to automate an imaging process using an Arduino to control mul
 
 1. **Arduino Setup**:
    - Open the Arduino IDE.
-   - Upload the provided `main.cpp` and `light.cpp` files to the Arduino.
+   - Upload the provided `main.cpp`, `light.cpp`, and `main.ino` files to the Arduino.
 
 2. **Python Setup**:
    - Clone this repository.
@@ -81,4 +80,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Contact
 
-For any questions or inquiries, please contact [Your Name](mailto:your.email@example.com).
+For any questions or inquiries, please contact [Lilli Kelley, Chris Lenhard](mailto:lmk8240@rit.edu).
