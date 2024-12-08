@@ -11,7 +11,6 @@ This project integrates an Arduino-based control system with a FLIR Blackfly 3 c
 - [Software Requirements](#software-requirements)
 - [Installation](#installation)
 - [Usage](#usage)
-- [Contributing](#contributing)
 - [License](#license)
 - [Contact](#contact)
 
@@ -69,10 +68,6 @@ This project aims to automate an imaging process using an Arduino to control mul
 
 3. **Arduino Commands**:
    - Commands are sent from the Python script to the Arduino to control the light states and capture images.
-
-## Contributing
-
-Contributions are welcome! Please fork this repository and submit pull requests for any enhancements or bug fixes.
 
 ## License
 
