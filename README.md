@@ -75,4 +75,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Contact
 
-For any questions or inquiries, please contact [Lilli Kelley, Chris Lenhard](mailto:lmk8240@rit.edu).
+For any questions or inquiries, please contact [Lilli Kelley](mailto:lmk8240@rit.edu), [Chris Lenhard](mailto:cml4608@rit.edu).
