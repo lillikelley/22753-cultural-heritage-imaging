@@ -75,4 +75,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Contact
 
-For any questions or inquiries, please contact [Lilli Kelley, Chris Lenhard](mailto:lmk8240@rit.edu).
+For any questions or inquiries, please contact:
+   - [Dylan Barnfield](mailto:dmb7684@rit.edu)
+   - [Kaitlin Gunther](mailto:krg8349@rit.edu)
+   - [Lilli Kelley](mailto:lmk8240@rit.edu)
