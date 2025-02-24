@@ -1,3 +1,4 @@
+# Spinnaker camera init
 import serial
 import time
 import PySpin
@@ -11,13 +12,23 @@ def initialize_camera():
     cam_list = system.GetCameras()
     cam = cam_list[0]
     cam.Init()
+    # Follow the documentation and set up the hardware trigger
+    cam.LineSelector.SetValue(PySpin.LineSelector_Line2)
+    cam.V3_3Enable.SetValue(True)
+    cam.TriggerMode.SetValue(PySpin.TriggerMode_Off)
+    cam.TriggerSource.SetValue(PySpin.TriggerSource_Line3)
+    cam.TriggerOverlap.SetValue(PySpin.TriggerOverlap_ReadOut)
+    cam.TriggerMode.SetValue(PySpin.TriggerMode_On)
     return cam
 
 def capture_image(camera):
+    # Set acquisition mode to acquire a single frame
+    camera.AcquisitionMode.SetValue(PySpin.AcquisitionMode_SingleFrame)
     camera.BeginAcquisition()
     image = camera.GetNextImage()
     image.Save('image.jpg')
     image.Release()
+    image.GetImageStatus()
     camera.EndAcquisition()
 
 def send_command(command):

@@ -1,3 +1,4 @@
+# Camera loop
 from module import initialize_camera, capture_image, send_command, ser
 
 def main():
