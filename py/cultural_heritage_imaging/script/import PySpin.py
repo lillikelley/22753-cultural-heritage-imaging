@@ -1,5 +1,5 @@
 import PySpin
-import serial
+import serial 
 import time
 import matplotlib.pyplot as plt
 import numpy as np
