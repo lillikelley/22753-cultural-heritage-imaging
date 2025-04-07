@@ -1,11 +1,15 @@
 #ifndef MAIN_H
 #define MAIN_H
 
-extern const int numLights;
-extern int currentLight;
-extern bool imagingComplete;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-void setup();
-void loop();
+void setup(void); // Matches the Arduino.h declaration
+void loop(void);  // Matches the Arduino.h declaration
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // MAIN_H
