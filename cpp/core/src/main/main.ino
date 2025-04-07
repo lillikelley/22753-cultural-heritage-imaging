@@ -55,7 +55,7 @@ void loop() {
                 break;
 
             case 'T': // Image taken
-                Serial.println("Image taken, turning off light...");
+                Serial.println("Image taken...");
                 turnOffLight(currentLight);
                 currentLight++;
                 if (currentLight < numLights) {
