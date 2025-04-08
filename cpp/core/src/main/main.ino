@@ -1,10 +1,14 @@
 #include "main.h"
 #include "light.h"  // Include the light control functions
 #include <Arduino.h>
+int PWM = 3;
+int EN1 = 8;
+int EN2 = 7;
+int EN3 = 6;
+int EN4 = 5;
 const int numLights = 4; // Number of lights
-int currentLight = 0; // Start with the first light
+int currentLight = 1; // Start with the first light
 bool imagingComplete = false;
-
 
 void turnOnLight(int lightIndex) {
     Serial.print("Turning on light ");
@@ -23,20 +27,15 @@ void turnOffLight(int lightIndex) {
 
 void setup() {
     Serial.begin(9600); // Start serial communication
-    for (int i = 0; i < numLights; i++) {
-        pinMode(i, OUTPUT); // Set each light pin to output
+    int EN[] = {EN1, EN2, EN3, EN4};
+    for (int i = 8; i < numLights; i--) {
+        pinMode(EN[i], OUTPUT); // Set each light pin to output
+    }
+     for (int j = 8; j < numLights; j--) {
+        digitalWrite(EN[j], 0); // Set PWM to 0% DC
     }
     Serial.println("System Powered On. Awaiting connection...");
 }
-
-// void loop() 
-// {
-//     // Example usage
-//     turnOnLight(0);
-//     delay(1000); // Keep the light on for a second
-//     turnOffLight(0);
-//     delay(1000); // Keep the light off for a second
-// }
 
 void loop() {
     if (Serial.available() > 0) {
@@ -48,32 +47,40 @@ void loop() {
                 Serial.println("Awaiting prompt to begin imaging...");
                 break;
 
-            case 'I': // Begin imaging
+            case 'cap': // Begin imaging
                 imagingComplete = false;
                 Serial.println("Starting imaging process...");
                 turnOnLight(currentLight);
+                Serial.println("cap");
                 break;
 
             case 'T': // Image taken
-                Serial.println("Image taken...");
-                turnOffLight(currentLight);
-                currentLight++;
-                if (currentLight < numLights) {
+                Serial.println("Image taken, turning off light...");
+                //turnOffLight(currentLight);
+                if (currentLight < numLights)
+                {
                     turnOnLight(currentLight);
+                    currentLight++;
+                    Serial.println("cap");
+                    //Need to rewrite this line, right now if statement waits 250 ms. If capture takes longer than 250 ms it will proceed without capturing
+                    delay(250);
+                    if (command == 'Z') {
+                        delay(250);
+                        turnOffLight(currentLight);
+                    } 
                 } else {
                     Serial.println("Imaging complete for all lights.");
-                    currentLight = 0;
+                    currentLight = 1;
                     imagingComplete = true;
                 }
                 break;
 
             case 'E': // End process
-                Serial.println("Ending process...");
-                for (int i = 0; i < numLights; i++) {
-                    turnOffLight(i);
+                if (imagingComplete == false)
+                {
+                     Serial.println("Ending process...");
                 }
                 break;
         }
     }
 }
-
