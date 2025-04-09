@@ -28,12 +28,13 @@ void turnOffLight(int lightIndex) {
 void setup() {
     Serial.begin(9600); // Start serial communication
     int EN[] = {EN1, EN2, EN3, EN4};
-    for (int i = 8; i < numLights; i--) {
+    for (int i = 1; i < numLights; i--) {
         pinMode(EN[i], OUTPUT); // Set each light pin to output
     }
-     for (int j = 8; j < numLights; j--) {
-        digitalWrite(EN[j], 0); // Set PWM to 0% DC
+     for (int j = 1; j < numLights; j--) {
+        digitalWrite(EN[j], LOW); // Set PWM to 0% DC
     }
+    analogWrite(PWM, 150);
     Serial.println("System Powered On. Awaiting connection...");
 }
 
@@ -47,24 +48,24 @@ void loop() {
                 Serial.println("Awaiting prompt to begin imaging...");
                 break;
 
-            case 'cap': // Begin imaging
-                imagingComplete = false;
-                Serial.println("Starting imaging process...");
-                turnOnLight(currentLight);
-                Serial.println("cap");
-                break;
+//             case 'A': // Begin imaging
+//                 imagingComplete = false;
+//                 Serial.println("Starting imaging process...");
+//                 turnOnLight(currentLight);
+//                 Serial.println("A");
+//                 break;
 
-            case 'T': // Image taken
+            case 'Z': // Image taken
                 Serial.println("Image taken, turning off light...");
                 //turnOffLight(currentLight);
                 if (currentLight < numLights)
                 {
                     turnOnLight(currentLight);
                     currentLight++;
-                    Serial.println("cap");
+                    Serial.println("A");
                     //Need to rewrite this line, right now if statement waits 250 ms. If capture takes longer than 250 ms it will proceed without capturing
                     delay(250);
-                    if (command == 'Z') {
+                    if (command == 'B') {
                         delay(250);
                         turnOffLight(currentLight);
                     } 

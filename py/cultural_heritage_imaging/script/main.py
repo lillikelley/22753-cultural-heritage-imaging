@@ -4,15 +4,18 @@ import time
 import PySpin
 # Camera loop
 # Initialize serial communication with Arduino
-ser = serial.Serial('COM3', 9600)  # Replace 'COM3' with the correct port
+ser = serial.Serial('COM8', 9600)  # Replace 'COM3' with the correct port
 time.sleep(2)  # Wait for the connection to establish
+system = PySpin.System.GetInstance()
+cam_list = system.GetCameras()
+cam = cam_list[0]
 
 def initialize_camera():
-    system = PySpin.System.GetInstance()
-    cam_list = system.GetCameras()
-    cam = cam_list[0]
-    cam.Init()
-    # Follow the documentation and set up the hardware trigger
+    try:
+        cam.Init()
+    except PySpin.SpinnakerException as e:
+        print(f"Camera initialization failed: {e}")
+        system.ReleaseInstance()    # Follow the documentation and set up the hardware trigger
     cam.LineSelector.SetValue(PySpin.LineSelector_Line2)
     cam.V3_3Enable.SetValue(True)
     cam.TriggerMode.SetValue(PySpin.TriggerMode_Off)
@@ -31,22 +34,25 @@ def capture_image(camera):
     image.GetImageStatus()
     camera.EndAcquisition()
 
-def send_command(command):
-    ser.write(command.encode())  # Send command to Arduino
-    while ser.in_waiting > 0:
-        response = ser.readline().decode('utf-8').strip()
-        print(response)
+# def send_command(command):
+#     ser.write(bytearray(command.encode()))  # Send command to Arduino
+#     print(command)
+#     while ser.in_waiting > 0:
+#         response = ser.readline().decode('utf-8').strip()
+#         print(response)
 
 def main():
     cam = initialize_camera()
-    send_command('C')  # Send connection established command
+    ser.write(bytearray("C", "utf-8"))  # Send connection established command
 
     while True: # b prefix for byte marker in python
         command = ser.read()  # Read command from Arduino
         if command == b'T':
+            ser.write(bytearray("Z", "utf-8"))  # Send image taken command
+        if command == b'A':
             capture_image(cam)  # Capture image
-            send_command('Z')  # Send image taken command
-        elif command == b'E':
+            ser.write(bytearray("B", "utf-8"))
+        else:
             break  # End process
 
     cam.DeInit()
