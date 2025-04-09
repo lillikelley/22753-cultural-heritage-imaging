@@ -2,6 +2,11 @@
 import serial
 import time
 import PySpin
+import serial.tools.list_ports
+
+ports = serial.tools.list_ports.comports()
+for port in ports:
+    print(port.device)
 
 # Initialize serial communication with Arduino
 arduino = serial.Serial('COM3', 9600)  # Replace 'COM3' with the correct port
@@ -75,11 +80,11 @@ def main():
     while True: # b prefix for byte marker in python
         command = arduino.read()  # Read command from Arduino
         if command == b'T':
-            arduino.write(bytearray('Z', "utf-8"))  # Send image taken command
+            arduino.write(b'Z')  # Send image taken command
             print("Image taken.")
         if command == b'A':
             capture_image(cam)  # Capture image
-            arduino.write(bytearray('B', "utf-8"))
+            arduino.write(b'B')
         else:
             break  # End process
 

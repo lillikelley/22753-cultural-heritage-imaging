@@ -1,3 +1,5 @@
+
+
 int PWM = 3;
 int EN1 = 8;
 int EN2 = 7;
@@ -64,7 +66,6 @@ void loop() {
                         temp++; 
                       } 
                     }
-
                     currentLight++;
 
                 } else {
