@@ -2,13 +2,23 @@
 import serial
 import time
 import PySpin
-# Camera loop
+
 # Initialize serial communication with Arduino
-ser = serial.Serial('COM8', 9600)  # Replace 'COM3' with the correct port
+arduino = serial.Serial('COM3', 9600)  # Replace 'COM3' with the correct port
 time.sleep(2)  # Wait for the connection to establish
-system = PySpin.System.GetInstance()
+system = PySpin.System.GetInstance() # Initialize the system
+
+# Get the list of cameras
 cam_list = system.GetCameras()
+num_cameras = cam_list.GetSize()
 cam = cam_list[0]
+# Get the first camera
+cam = cam_list.GetByIndex(0)
+
+if num_cameras == 0:
+    print("No cameras detected.")
+    cam_list.Clear()
+    system.ReleaseInstance()
 
 def initialize_camera():
     try:
@@ -27,12 +37,28 @@ def initialize_camera():
 def capture_image(camera):
     # Set acquisition mode to acquire a single frame
     camera.AcquisitionMode.SetValue(PySpin.AcquisitionMode_SingleFrame)
+
+    # Set the pixel format to a supported format (e.g., Mono8)
+    nodemap = cam.GetNodeMap()
+    pixel_format = PySpin.CEnumerationPtr(nodemap.GetNode("PixelFormat"))
+    pixel_format_mono8 = pixel_format.GetEntryByName("Mono8")
+    pixel_format.SetIntValue(pixel_format_mono8.GetValue())
     camera.BeginAcquisition()
+    print("Camera acquisition started.")
     image = camera.GetNextImage()
     image.Save('image.jpg')
     image.Release()
     image.GetImageStatus()
     camera.EndAcquisition()
+    print("Camera acquisition ended.")
+
+    # Display all images after the loop
+    fig, axs = plt.subplots(1, 4, figsize=(20, 5))
+    for i, (image_data, led_name) in enumerate(images):
+        axs[i].imshow(image_data, cmap='gray')
+        axs[i].set_title(f"{led_name} Light Image")
+        axs[i].axis('off')
+    plt.show()
 
 # def send_command(command):
 #     ser.write(bytearray(command.encode()))  # Send command to Arduino
@@ -43,22 +69,26 @@ def capture_image(camera):
 
 def main():
     cam = initialize_camera()
-    ser.write(bytearray("C", "utf-8"))  # Send connection established command
+    arduino.write(b'C')  # Send connection established command
+    print("Connection established.")
 
     while True: # b prefix for byte marker in python
-        command = ser.read()  # Read command from Arduino
+        command = arduino.read()  # Read command from Arduino
         if command == b'T':
-            ser.write(bytearray("Z", "utf-8"))  # Send image taken command
+            arduino.write(bytearray('Z', "utf-8"))  # Send image taken command
+            print("Image taken.")
         if command == b'A':
             capture_image(cam)  # Capture image
-            ser.write(bytearray("B", "utf-8"))
+            arduino.write(bytearray('B', "utf-8"))
         else:
             break  # End process
 
     cam.DeInit()
+    # Clear the camera list before releasing the system
     cam_list.Clear()
+    # Release the system
     system.ReleaseInstance()
-    ser.close()  # Close the serial connection
+    arduino.close()  # Close the serial connection
 
 if __name__ == "__main__":
     main()
