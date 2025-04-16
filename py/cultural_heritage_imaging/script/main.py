@@ -9,7 +9,7 @@ for port in ports:
     print(port.device)
 
 # Initialize serial communication with Arduino
-arduino = serial.Serial('COM3', 9600)  # Replace 'COM3' with the correct port
+arduino = serial.Serial('COM5', 9600)  # Replace 'COM3' with the correct port
 time.sleep(2)  # Wait for the connection to establish
 system = PySpin.System.GetInstance() # Initialize the system
 
@@ -50,6 +50,8 @@ def capture_image(camera):
     pixel_format.SetIntValue(pixel_format_mono8.GetValue())
     camera.BeginAcquisition()
     print("Camera acquisition started.")
+
+    # Get an image and save it
     image = camera.GetNextImage()
     image.Save('image.jpg')
     image.Release()
