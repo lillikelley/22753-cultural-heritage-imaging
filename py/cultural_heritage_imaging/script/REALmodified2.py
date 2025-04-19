@@ -25,6 +25,8 @@ arduino = serial.Serial('COM3', 9600, timeout=1)
 arduino.setDTR(False)
 time.sleep(0.2)
 arduino.flushInput()
+
+#Initialize spinnaker system
 system = PySpin.System.GetInstance()
 cam_list = system.GetCameras()
 cam = cam_list.GetByIndex(0)

@@ -81,8 +81,8 @@ def main():
 
     while True: # b prefix for byte marker in python
         command = arduino.read()  # Read command from Arduino
-        if command == b'T':
-            arduino.write(b'Z')  # Send image taken command
+        if command == 'T':
+            arduino.write('Z')  # Send image taken command
             print("Image taken.")
         if command == b'A':
             capture_image(cam)  # Capture image
