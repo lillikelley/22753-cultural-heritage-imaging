@@ -25,8 +25,6 @@ arduino = serial.Serial('COM3', 9600, timeout=1)
 arduino.setDTR(False)
 time.sleep(0.2)
 arduino.flushInput()
-
-#Initialize spinnaker system
 system = PySpin.System.GetInstance()
 cam_list = system.GetCameras()
 cam = cam_list.GetByIndex(0)
@@ -96,30 +94,46 @@ def capture_image(camera):
         
     if image.IsIncomplete():
         print(f'Image incomplete with status {image.GetImageStatus()}')
-    #else:
-        #numpy_array = image.GetNDArray()
+    else:
+        # raw_data = image.GetData()
+        # width = image.GetWidth()
+        # height = image.GetHeight()
         
+        # image_converted = np.frombuffer(raw_data, dtype = np.uint8).reshape((height, width))
+        # image_mono8 = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        numpy_array = image.GetNDArray()
+        
+    cv2.imwrite("output_image.jpg", numpy_array)
+    
+    #save_picture(image)
     image.Release()
-    save_picture(image)
     print("Image saved successfully")
     camera.EndAcquisition()
+    #cam.DeInit() Might not need this, camera does not reinitialize between captures
 
-def save_picture(image_to_save):
-    # Get current time
-    current_time = time.localtime()  # Returns struct_time (local time)
+# def save_picture(image_to_save):
+    # # Get current time
+    # current_time = time.localtime()  # Returns struct_time (local time)
 
-    # Format the time to be included in the filename (e.g., YYYY-MM-DD_HH-MM-SS)
-    formatted_time = time.strftime("%Y-%m-%d_%H-%M-%S", current_time)
+    # # Format the time to be included in the filename (e.g., YYYY-MM-DD_HH-MM-SS)
+    # formatted_time = time.strftime("%Y-%m-%d_%H-%M-%S", current_time)
 
-    # Check if 'Images' directory exists, and create it if it doesn't
-    if not os.path.exists("Images"):
-        os.makedirs("Images")
+    # # Check if 'Images' directory exists, and create it if it doesn't
+    # if not os.path.exists("Images"):
+        # os.makedirs("Images")
 
-    # Set path to save images (using os.path.join for cross-platform compatibility)
-    save_path = os.path.join("Images", f"captured_at_{formatted_time}.tif")
+    # # Set path to save images (using os.path.join for cross-platform compatibility)
+    # save_path = os.path.join("Images", f"captured_at_{formatted_time}.tif")
 
-    imwrite(save_path, image_to_save, shape=image_to_save.shape)
-    print("Image saved at", save_path)
+    # print(image_to_save.GetPixelFormatName())
+    # print(type(image_to_save))
+    # image_converted = image_to_save.Convert(PySpin.PixelFormat_RGB8, PySpin.HQ_LINEAR)
+    # print(image_to_save.GetPixelFormatName())
+
+    # #umpy_array = image_converted.GetNDArray()
+    # imwrite(save_path, image_to_save, shape=numpy_array.shape)
+    # print("Image saved at", save_path)
 
 
 # Function 'serialCom' takes false boolean, and reas serial input from Arduino. Upon turning on a light, 

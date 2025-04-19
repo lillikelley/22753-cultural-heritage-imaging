@@ -1,5 +1,3 @@
-
-
 int PWM = 3;
 int EN1 = 8;
 int EN2 = 7;
@@ -11,76 +9,123 @@ int currentLight = 0; // Start with the first light
 bool imagingComplete = false;
 
 void turnOnLight(int lightIndex) {
-    Serial.print("Turning on light ");
-    Serial.println(lightIndex);
     digitalWrite(EN[lightIndex], HIGH);
-    Serial.print("Light ");
-    Serial.print(lightIndex);
-    Serial.println(" is on. Notifying PC capture software...");
 }
 
 void turnOffLight(int lightIndex) {
-    Serial.print("Turning off light ");
-    Serial.println(lightIndex);
     digitalWrite(EN[lightIndex], LOW);
 }
 
 void setup() {
     Serial.begin(9600); // Start serial communication
     for (int i = 0; i < numLights; i++) {
-        pinMode(EN[i], OUTPUT); // Set each light pin to output
+      pinMode(EN[i], OUTPUT); // Set each light pin to output
     }
-     for (int j = 0; j < numLights; j++) {
-        digitalWrite(EN[j], LOW); // Set PWM to 0% DC
+    for (int j = 0; j < numLights; j++) {
+      digitalWrite(EN[j], LOW); // Set PWM to 0% DC
     }
-    analogWrite(PWM, 150);
-    Serial.println("System Powered On. Awaiting connection...");
+    analogWrite(PWM, 200);
 }
 
 void loop() {
     if (Serial.available() > 0) {
         char command = Serial.read();
-// user cmds C, Z, A, B, E
-// youll get Z from the script
-// turn on the light , A tells the script that the light is on and its time to take the picture
-// B pictures finished lights off
+        currentLight = 0;
+
         switch (command) {
             case 'C': // Connection established
-                Serial.println("Connection acknowledged.");
-                Serial.println("Awaiting prompt to begin imaging...");
+                for (int j = 0; j < numLights; j++) {
+                  digitalWrite(EN[j], LOW); // Set PWM to 0% DC
+                }
+                analogWrite(PWM, 200);
                 break;
 
-            case 'Z': // Image taken
-                if (currentLight < numLights)
-                {
-                    turnOnLight(currentLight);
-                    Serial.write("A");
-                    // Need to rewrite this line, right now if statement waits 250 ms. If capture takes longer than 250 ms it will proceed without capturing
-                    int temp = 0;
+            case 'F': // Four-capture mode
+              while (currentLight < numLights) {
+                turnOnLight(currentLight);
+                Serial.write('A');
 
-                    while (temp == 0) {
-                      char x = Serial.read();
-                      if (x == 'B') {
-                        turnOffLight(currentLight);
-                        delay(250);
-                        temp++; 
-                      } 
+                int temp = 0;
+                while (temp == 0) {
+                  char x = Serial.read();
+                  if (x == 'B') {
+                    turnOffLight(currentLight);
+                    temp++; 
+                  } 
+                }
+
+                currentLight++;
+
+              }
+              
+              Serial.write('D');
+              imagingComplete = true;
+            
+            break;
+
+            case 'U': // Single capture mode
+              int temp0 = 0;
+              while (temp0 == 0) {
+                char y = Serial.read();
+                
+                if (y == 'N') {
+                  turnOnLight(0);
+                  Serial.write('A');
+                  int temp1 = 0;
+                  while (temp1 == 0) {
+                    char z1 = Serial.read();
+                    if (z1 == 'B'){
+                      turnOffLight(0);
+                      Serial.write('D');
+                      temp1++;
+                    }                    
+                  }
+                  temp0++;
+                } else if (y == 'E') {
+                  turnOnLight(1);
+                  Serial.write('A');
+                  int temp2 = 0;
+                  while (temp2 == 0) {
+                    char z2 = Serial.read();
+                    if (z2 == 'B'){
+                      turnOffLight(1);
+                      Serial.write('D');
+                      temp2++;
                     }
-                    currentLight++;
+                  }
+                  temp0++;
+                } else if (y == 'S') {
+                  turnOnLight(2);
+                    Serial.write('A');
 
-                } else {
-                    Serial.println("Imaging complete for all lights.");
-                    currentLight = 0;
-                    imagingComplete = true;
-                }
-                break;
+                    int temp3 = 0;
+                    while (temp3 == 0) {
+                      char z3 = Serial.read();
+                      if (z3 == 'B'){
+                        turnOffLight(2);
+                        Serial.write('D');
+                        temp3++;
+                      }
+                    }
+                  temp0++;
+                } else if (y == 'W') {
+                  turnOnLight(3);
+                    Serial.write('A');
 
-            case 'E': // End process
-                if (imagingComplete == false)
-                {
-                     Serial.println("Ending process...");
-                }
-                break;
+                    int temp4 = 0;
+                    while (temp4 == 0) {
+                      char z4 = Serial.read();
+                      if (z4 == 'B'){
+                        turnOffLight(3);
+                        Serial.write('D');
+                        temp4++;
+                      }
+                    }
+                  temp0++;
+                } 
+              }
+            
+            break;
         }
     }
 }

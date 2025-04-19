@@ -84,9 +84,9 @@ def main():
         if command == 'T':
             arduino.write('Z')  # Send image taken command
             print("Image taken.")
-        if command == b'A':
+        if command == 'A':
             capture_image(cam)  # Capture image
-            arduino.write(b'B')
+            arduino.write('B')
         else:
             break  # End process
 
