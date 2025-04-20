@@ -1,15 +1,32 @@
-# Spinnaker camera init
+"""
+Spinnaker Camera Capture Framework
+
+This script provides a comprehensive interface for managing camera operations
+using the Spinnaker SDK. It includes features such as initialization, image
+capture, exposure control, and data processing utilities.
+
+Written by:
+    Lillian Kelley
+    Sai Keshav Sasanapuri
+    Will Schuley
+
+For use in projects requiring high-performance and customizable camera solutions.
+"""
 import serial
 import sys
 import time
 import PySpin
 import os
-import numpy
-#import matplotlib.pyplot as plot
 from tifffile import imwrite
 
+# LILLI TODO
+# add lighting loop for four lights
+# filename implement TODO TEST
+# press F creates four different images with different names. U can be whatever name
+# init function that does auto exposure and gain TODO TEST
+
 b = True
-while (b):
+while b:
     print("Is power supply unplugged? [Y/n]")
     a = input("<< ")
     if a == 'Y':
@@ -21,165 +38,286 @@ while (b):
         print("Incorrect entry. Try again.")
         b = True
 
-arduino = serial.Serial('COM3', 9600, timeout=1)
-arduino.setDTR(False)
-time.sleep(0.2)
+# Establish a serial connection to the Arduino on COMX with a baud rate of 9600 and a 1-second timeout
+# USER: Be sure to replace port parameter with your Arduino comms port!
+arduino = serial.Serial('COM5', 9600, timeout=1)
+
+# Temporarily reset the Data Terminal Ready (DTR) line to avoid issues with automatic resets during communication
+arduino.setDTR(False)  # Note: 'setDTR' might not be recognized, refer to: https://stackoverflow.com/a/19656567
+time.sleep(0.2) # Allow Arduino to reset
+
+# Clear any existing data in the input buffer to start with fresh data
 arduino.flushInput()
-system = PySpin.System.GetInstance()
-cam_list = system.GetCameras()
+
+system = PySpin.System.GetInstance() # Initialize the PySpin system instance to manage camera interactions
+cam_list = system.GetCameras() # Retrieve a list of all cameras connected to the system
+num_cams = cam_list.GetSize() # Determine the number of connected cameras
+
+# Check if any cameras are detected.
+if num_cams == 0:
+    # If no cameras are found, display a message to the user
+    print("No cameras detected")
+    # Clear the camera list and release system resources
+    cam_list.Clear()
+    system.ReleaseInstance()
+    sys.exit()
+else:
+    # If at least one camera is detected, inform the user
+    print("Camera detected")
+# Access the first camera in the list
 cam = cam_list.GetByIndex(0)
 
 
-def initialize_camera():
-    
-    try:    
-        num_cameras = cam_list.GetSize()
-        
-        if num_cameras == 0:
-            raise PySpin.SpinnakerException('No Cameras Found! - Aborting')
+def __init__(self):
+    """
+    Constructor of the class. Initializes the camera, sets the exposure mode to manual,
+    disables auto-gain and auto exposure target grey, and sets the exposure to default.
 
-        # Get the first camera in the camera list. Assuming only one camera is connected
-        cam = cam_list.GetByIndex(0)
-        
-        nodemap_tldevice = cam.GetTLDeviceNodeMap()
-        
-        cam.Init()
-        
-        nodemap = cam.GetNodeMap()
-        
-        sNodemap = cam.GetTLStreamNodeMap()
-        node_bufferhandling_mode = PySpin.CEnumerationPtr(sNodemap.GetNode('StreamBufferHandlingMode'))
-        if not PySpin.IsReadable(node_bufferhandling_mode) or not PySpin.IsWritable(node_bufferhandling_mode):
-            raise PySpin.SpinnakerException('Unable to set stream buffer handling - Aborting')
+    :param None
+    :return: None
+    """
+    # Initialize default exposure values
+    self.ORIGINAL_EXPOSURE = 0.7
+    self.selected_exposure_array = [self.ORIGINAL_EXPOSURE] * 16
+    self.acquisition_mode = None
 
-        # Set buffer handling to 'newest only'. This ensures the newest images is retrieved from the camera
-        node_newestonly = node_bufferhandling_mode.GetEntryByName('NewestOnly')
-        if not PySpin.IsReadable(node_newestonly):
-            raise PySpin.SpinnakerException('Unable to set stream buffer handling - Aborting')
-        node_bufferhandling_mode.SetIntValue(node_newestonly.GetValue())
-        
-        # Set acquisition mode to acquire a single frame
-        cam.AcquisitionMode.SetValue(PySpin.AcquisitionMode_SingleFrame)
-        
-        # ---Enable automatic exposure---
-        # cam.ExposureAuto.SetValue(PySpin.ExposureAuto_Continuous)
-        # ---Enable automatic gain---
-        # cam.GainAuto.SetValue(PySpin.GainAuto_Continuous)
+    try:
+        # Initialize the camera
+        self.initialize_camera()
 
-        # ---Disable Auto Gain - Set gain for the camera. Ensure not over max settable value---
-        # Gain  = [min:0 - max:27dB]
-        # cam.GainAuto.SetValue(PySpin.GainAuto_Off)
-        # gain_to_set = min(Gain, cam.Gain.GetMax())
-        # cam.Gain.SetValue(gain_to_set)
+        # If camera is initialized successfully, configure settings
+        self.camera.ExposureAuto.SetValue(PySpin.ExposureAuto_Off)
+        self.camera.ExposureTime.SetValue(self.get_microseconds(self.ORIGINAL_EXPOSURE))
+        self.camera.GainAuto.SetValue(PySpin.GainAuto_Off)
+        self.camera.AutoExposureTargetGreyValueAuto.SetValue(PySpin.AutoExposureTargetGreyValueAuto_Off)
 
-        # ---Disable Auto Exposure - Set Exposure time for the camera. Ensure not over max settable value---
-        # Provide Exposure time in seconds. [min:69 microseconds - max:30 seconds]
-        # cam.AutoExposureTargetGreyValueAuto.SetValue(PySpin.AutoExposureTargetGreyValueAuto_Off)  # Disable auto exposure target grey
-        # cam.ExposureAuto.SetValue(PySpin.ExposureAuto_Off) # Disable automatic exposure
-        # exposure_time = float(Exposure time) * 1e6 # Convert exposure time to micro-seconds. Ensure not over max settable value
-        # exposure_time_to_set = min(cam.ExposureTime.GetMax(), exposure_time)
-        # cam.ExposureTime.SetValue(exposure_time_to_set) # Set exposure time of the camera
+    except PySpin.SpinnakerException:
+        raise ValueError("Initialization failed")
 
-    except PySpin.SpinnakerException as e:
-        print(f"Camera initialization failed: {e}")
-        system.ReleaseInstance()  # Follow the documentation and set up the hardware trigger
+    finally:
+        # Ensure the camera is uninitialized to clean up resources
+        self.uninitialize_camera()
 
-    return {"Success": True, "Camera": cam, "Cam List": cam_list, "System": system, "NodeMap": nodemap,
-            "NodeMap TLDevice": nodemap_tldevice}
+
+def initialize_camera(self, mode='SingleFrame'):
+    """
+    Initializes the camera for image acquisition with a specified mode.
+
+    :param mode: str
+        The acquisition mode to be set ('SingleFrame' by default).
+    :return: None
+    """
+    try:
+        # Initialize camera and system variables
+        self.camera = None
+        self.acquisition_mode = mode
+        self.system = PySpin.System.GetInstance()
+        cam_list = self.system.GetCameras()
+
+        # Check if cameras are available
+        if cam_list.GetSize() == 0:
+            raise PySpin.SpinnakerException("No cameras found. Initialization failed.")
+
+        # Use the first available camera
+        self.camera = cam_list.GetByIndex(0)
+        self.camera.Init()
+
+        # Set the acquisition mode
+        nodemap = self.camera.GetNodeMap()
+        node_acquisition_mode = PySpin.CEnumerationPtr(nodemap.GetNode('AcquisitionMode'))
+        if not PySpin.IsReadable(node_acquisition_mode) or not PySpin.IsWritable(node_acquisition_mode):
+            raise PySpin.SpinnakerException("Acquisition mode is not accessible.")
+
+        node_acquisition_mode_ = node_acquisition_mode.GetEntryByName(mode)
+        if not PySpin.IsReadable(node_acquisition_mode_):
+            raise PySpin.SpinnakerException("Desired acquisition mode is not accessible.")
+
+        acquisition_mode_ = node_acquisition_mode_.GetValue()
+        node_acquisition_mode.SetIntValue(acquisition_mode_)
+
+        # Set additional stream buffer handling if in continuous mode
+        if self.acquisition_mode == 'Continuous':
+            sNodemap = self.camera.GetTLStreamNodeMap()
+            node_bufferhandling_mode = PySpin.CEnumerationPtr(sNodemap.GetNode('StreamBufferHandlingMode'))
+            if not PySpin.IsReadable(node_bufferhandling_mode) or not PySpin.IsWritable(node_bufferhandling_mode):
+                raise PySpin.SpinnakerException("Stream buffer handling mode not accessible.")
+
+            node_newestonly = node_bufferhandling_mode.GetEntryByName('NewestOnly')
+            if not PySpin.IsReadable(node_newestonly):
+                raise PySpin.SpinnakerException("NewestOnly buffer handling mode not accessible.")
+
+            node_newestonly_mode = node_newestonly.GetValue()
+            node_bufferhandling_mode.SetIntValue(node_newestonly_mode)
+
+        cam_list.Clear()  # Clear the camera list
+
+    except PySpin.SpinnakerException as ex:
+        raise ValueError(f"Camera initialization failed: {ex}")
+
+
+def format_filename(base_name):
+    """
+    Formats the image file name after capture, ensuring it saves in the 'images' subdirectory.
+    :param base_name: The base name of the file (e.g., 'Image')
+    :return: The formatted filename as a string
+    """
+    # Get the parent directory (one level above the 'script' directory)
+    parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
+
+    # Define the path to the 'images' subdirectory
+    images_dir = os.path.join(parent_dir, "images")
+
+    # Check if the 'images' subdirectory exists, and create it if it doesn't
+    if not os.path.exists(images_dir):
+        os.makedirs(images_dir)
+
+    # Get the current time for timestamping the filename
+    current_time = time.localtime()
+    formatted_time = time.strftime("%Y-%m-%d_%H-%M-%S", current_time)
+
+    # Return the full path with the formatted filename
+    return os.path.join(images_dir, f"{base_name}_captured_at_{formatted_time}.tif")
 
 
 def capture_image(camera):
-    camera.BeginAcquisition()
-    image = camera.GetNextImage()
-        
-    if image.IsIncomplete():
-        print(f'Image incomplete with status {image.GetImageStatus()}')
-    else:
-        # raw_data = image.GetData()
-        # width = image.GetWidth()
-        # height = image.GetHeight()
-        
-        # image_converted = np.frombuffer(raw_data, dtype = np.uint8).reshape((height, width))
-        # image_mono8 = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        
-        numpy_array = image.GetNDArray()
-        
-    cv2.imwrite("output_image.jpg", numpy_array)
-    
-    #save_picture(image)
-    image.Release()
-    print("Image saved successfully")
-    camera.EndAcquisition()
-    #cam.DeInit() Might not need this, camera does not reinitialize between captures
+    """
+    Captures an image using the camera and saves it as a TIFF file.
+    :param camera: Camera object
+    :return: None
+    """
+    try:
+        # Initialize the camera
+        camera.Init()
 
-# def save_picture(image_to_save):
-    # # Get current time
-    # current_time = time.localtime()  # Returns struct_time (local time)
+        # Set the acquisition mode to single frame
+        camera.AcquisitionMode.SetValue(PySpin.AcquisitionMode_SingleFrame)
 
-    # # Format the time to be included in the filename (e.g., YYYY-MM-DD_HH-MM-SS)
-    # formatted_time = time.strftime("%Y-%m-%d_%H-%M-%S", current_time)
+        # Start acquiring images
+        camera.BeginAcquisition()
+        image = camera.GetNextImage()
 
-    # # Check if 'Images' directory exists, and create it if it doesn't
-    # if not os.path.exists("Images"):
-        # os.makedirs("Images")
+        if image.IsIncomplete():
+            # Handle incomplete images
+            print(f'Image incomplete with status {image.GetImageStatus()}')
+        else:
+            # Dynamically format the filename using the format_filename function
+            filename = format_filename("Image")  # 'Image' is the base name
 
-    # # Set path to save images (using os.path.join for cross-platform compatibility)
-    # save_path = os.path.join("Images", f"captured_at_{formatted_time}.tif")
+            # Convert the image to RGB format for saving
+            image_converted = image.Convert(PySpin.PixelFormat_RGB8, PySpin.HQ_LINEAR)
 
-    # print(image_to_save.GetPixelFormatName())
-    # print(type(image_to_save))
-    # image_converted = image_to_save.Convert(PySpin.PixelFormat_RGB8, PySpin.HQ_LINEAR)
-    # print(image_to_save.GetPixelFormatName())
+            # Convert the image to a NumPy array
+            numpy_array = image_converted.GetNDArray()
 
-    # #umpy_array = image_converted.GetNDArray()
-    # imwrite(save_path, image_to_save, shape=numpy_array.shape)
-    # print("Image saved at", save_path)
+            # Save the image as a TIFF file using tifffile's imwrite
+            imwrite(filename, numpy_array)
+            print(f"Image saved successfully at {filename}")
+
+        # Release the image and stop acquisitions
+        image.Release()
+        camera.EndAcquisition()
+        camera.DeInit()
+
+    except PySpin.SpinnakerException as ex:
+        # Handle exceptions raised by the PySpin library
+        print("Spinnaker Exception:", ex)
+
+    finally:
+        # Cleanup and delete the camera object
+        del camera
 
 
-# Function 'serialCom' takes false boolean, and reas serial input from Arduino. Upon turning on a light, 
-# the Arduino sends character 'A' over serial interface. Once 'A' is read in serialCom, it calls capture_image()
-# to trigger the camera to capture. It then sends 'B' over the serial interface to the Arduino to turn off the light.
-def serialCom(finish):
-    while not (finish):
+def serial_com(finish):
+    """
+    Reads serial input from Arduino to control camera captures and light operation.
+
+    When the Arduino turns on the light, it sends the character 'A' over the serial interface.
+    Upon detecting 'A', this function:
+    - Triggers the camera to capture an image by calling capture_image().
+    - Sends the character 'B' back to the Arduino to turn off the light.
+
+    The function stops running when the Arduino sends the character 'D'.
+
+    :param finish: Boolean indicating whether to finish the operation (typically initialized as False).
+    :return: Boolean indicating completion of the imaging process.
+    """
+    while not finish:
+        # Read a byte from the Arduino via the serial interface
         x = arduino.read()
+
         if x == b'A':
+            # If Arduino sends 'A', capture an image
             capture_image(cam)
             print("Capture done")
-            time.sleep(0.7)  # This line controls time between captures, important
-            arduino.write(('B').encode())
+
+            # Wait briefly before sending the 'B' command to control timing
+            time.sleep(0.7)  # This controls the interval between image captures
+
+            # Send 'B' to the Arduino to turn off the light
+            arduino.write('B'.encode())
+
         elif x == b'D':
+            # If Arduino sends 'D', mark the process as finished
             finish = True
+
+    # Print completion message
     print("Done Imaging.")
+    # Return the completion flag
     return finish
 
 
-def imageAgain():
+def image_again():
+    """
+    Prompt the user for multi-stage image capture.
+
+    This function asks the user whether they would like to capture another image.
+    - If the user enters 'Y' (or 'y'), it returns False, indicating the process should continue.
+    - If the user enters 'n' (or 'N'), it returns True, indicating the process should stop.
+    - If the user enters an invalid response, it prompts the user to retry.
+
+    :return: bool
+        False if the user wants to continue imaging, True if the user wants to stop.
+    """
+    # Prompt the user for input
     print("Image again? [Y/n]")
-    re = input(">> ")
+    re = input(">> ").lower()  # Convert input to lowercase for case-insensitivity
+
+    # Initialize the loop control variable
     y = True
-    while (y):
-        if re == 'Y':
+    while y:
+        if re == 'y':
+            # If the user enters 'y' or 'Y', stop the loop and return False (continue imaging)
+            y = False
             return False
-            y = False
         elif re == 'n':
-            return True
+            # If the user enters 'n' or 'N', stop the loop and return True (stop imaging)
             y = False
+            return True
         else:
+            # Handle invalid input and prompt the user to retry
             print("Incorrect entry. Retry.")
-            y = True
+            re = input(">> ").lower()  # Convert input to lowercase for retry
+
+    # Return None explicitly as a fallback (added here for completeness)
+    return None
 
 
 def main():
-    cam = initialize_camera()
+    """
+    Main camera capture loop.
+    :return: None
+    """
+    global cam
+    #cam = initialize_camera(cam)
     print("\n")
-    arduino.write(('C').encode())
+    arduino.write('C'.encode())
     print("Connect system to power now.")
     print("\n")
 
     done = False
 
     try:
-        while not (done):
+        while not done:
 
             print("Awaiting prompt to begin imaging:")
             print("Input F for 4-capture mode or U for single capture.")
@@ -187,8 +325,8 @@ def main():
             command = input(">> ")
             if command == 'F':
                 arduino.write(command.encode())
-                serialCom(done)
-                done = imageAgain()
+                serial_com(done)
+                done = image_again()
 
             elif command == 'U':
                 arduino.write(command.encode())
@@ -197,23 +335,23 @@ def main():
 
                 if dir == 'N':
                     arduino.write(dir.encode())
-                    serialCom(done)
-                    done = imageAgain()
+                    serial_com(done)
+                    done = image_again()
 
                 elif dir == 'S':
                     arduino.write(dir.encode())
-                    serialCom(done)
-                    done = imageAgain()
+                    serial_com(done)
+                    done = image_again()
 
                 elif dir == 'E':
                     arduino.write(dir.encode())
-                    serialCom(done)
-                    done = imageAgain()
+                    serial_com(done)
+                    done = image_again()
 
                 elif dir == 'W':
                     arduino.write(dir.encode())
-                    serialCom(done)
-                    done = imageAgain()
+                    serial_com(done)
+                    done = image_again()
 
                 else:
                     print("Incorrect entry, retry.")
@@ -221,12 +359,10 @@ def main():
             else:
                 print("Incorrect command, retry.")
 
-
     except KeyboardInterrupt:
         print("\nExiting")
     finally:
-
-        cam.DeInit()
+        del cam
         cam_list.Clear()
         system.ReleaseInstance()
         arduino.close()
