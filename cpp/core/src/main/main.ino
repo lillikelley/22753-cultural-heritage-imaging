@@ -1,131 +1,167 @@
-int PWM = 3;
-int EN1 = 8;
-int EN2 = 7;
-int EN3 = 6;
-int EN4 = 5;
-int EN[] = {EN1, EN2, EN3, EN4};
+int PWM = 3; // PWM pin for light brightness
+int EN1 = 8; // Enable pin for light 1 (North)
+int EN2 = 7; // Enable pin for light 2 (East)
+int EN3 = 6; // Enable pin for light 3 (South)
+int EN4 = 5; // Enable pin for light 4 (West)
+int EN[] = {EN1, EN2, EN3, EN4}; // Array of enable pins
 const int numLights = 4; // Number of lights
-int currentLight = 0; // Start with the first light
-bool imagingComplete = false;
+int currentLight = 0; // Current light index for F mode
+const unsigned long timeout = 5000; // Timeout in milliseconds for serial reads
+int pwmValue = 200; // Default PWM value (~78% duty cycle)
 
 void turnOnLight(int lightIndex) {
     digitalWrite(EN[lightIndex], HIGH);
+    Serial.print("DEBUG: Turning on light ");
+    Serial.println(lightIndex);
+    Serial.write('L'); // Send light confirmation
+    Serial.write(lightIndex); // Send light index (0-3)
 }
 
 void turnOffLight(int lightIndex) {
     digitalWrite(EN[lightIndex], LOW);
+    Serial.print("DEBUG: Turning off light ");
+    Serial.println(lightIndex);
+}
+
+void resetState() {
+    for (int i = 0; i < numLights; i++) {
+        digitalWrite(EN[i], LOW);
+    }
+    currentLight = 0;
+    Serial.println("DEBUG: Reset state - all lights off, currentLight = 0");
 }
 
 void setup() {
-    Serial.begin(9600); // Start serial communication
+    Serial.begin(9600); // Start serial communication at 9600 baud
     for (int i = 0; i < numLights; i++) {
-      pinMode(EN[i], OUTPUT); // Set each light pin to output
+        pinMode(EN[i], OUTPUT); // Set each light pin to output
+        digitalWrite(EN[i], LOW); // Ensure lights are off
     }
-    for (int j = 0; j < numLights; j++) {
-      digitalWrite(EN[j], LOW); // Set PWM to 0% DC
-    }
-    analogWrite(PWM, 200);
+    analogWrite(PWM, pwmValue); // Set initial PWM value
+    Serial.println("DEBUG: Setup complete, PWM set to 200");
 }
 
 void loop() {
     if (Serial.available() > 0) {
         char command = Serial.read();
-        currentLight = 0;
+        Serial.print("DEBUG: Received command: ");
+        Serial.println(command);
+
+        unsigned long startTime; // Declare startTime for switch scope
+        bool receivedB; // Declare receivedB for switch scope
 
         switch (command) {
             case 'C': // Connection established
-                for (int j = 0; j < numLights; j++) {
-                  digitalWrite(EN[j], LOW); // Set PWM to 0% DC
+                resetState();
+                break;
+
+            case 'P': // Set PWM value
+                while (Serial.available() == 0 && millis() < timeout) {} // Wait for PWM value
+                if (Serial.available() > 0) {
+                    pwmValue = Serial.read(); // Read PWM value (0-255)
+                    analogWrite(PWM, pwmValue);
+                    Serial.print("DEBUG: Set PWM to ");
+                    Serial.println(pwmValue);
+                } else {
+                    Serial.println("DEBUG: Error: Timeout waiting for PWM value");
+                    Serial.write('E');
                 }
-                analogWrite(PWM, 200);
+                break;
+
+            case 'R': // Reset state
+                resetState();
                 break;
 
             case 'F': // Four-capture mode
-              while (currentLight < numLights) {
-                turnOnLight(currentLight);
-                Serial.write('A');
+                currentLight = 0; // Reset currentLight
+                while (currentLight < numLights) {
+                    turnOnLight(currentLight);
+                    Serial.write('A');
 
-                int temp = 0;
-                while (temp == 0) {
-                  char x = Serial.read();
-                  if (x == 'B') {
-                    turnOffLight(currentLight);
-                    temp++; 
-                  } 
+                    startTime = millis();
+                    receivedB = false;
+                    while (!receivedB && (millis() - startTime < timeout)) {
+                        if (Serial.available() > 0) {
+                            char x = Serial.read();
+                            if (x == 'B') {
+                                turnOffLight(currentLight);
+                                receivedB = true;
+                            }
+                        }
+                    }
+
+                    if (!receivedB) {
+                        Serial.println("DEBUG: Error: Timeout waiting for B");
+                        Serial.write('E');
+                        turnOffLight(currentLight);
+                        return;
+                    }
+
+                    currentLight++;
                 }
-
-                currentLight++;
-
-              }
-              
-              Serial.write('D');
-              imagingComplete = true;
-            
-            break;
+                Serial.println("DEBUG: Four-capture mode complete");
+                Serial.write('D');
+                break;
 
             case 'U': // Single capture mode
-              int temp0 = 0;
-              while (temp0 == 0) {
-                char y = Serial.read();
-                
-                if (y == 'N') {
-                  turnOnLight(0);
-                  Serial.write('A');
-                  int temp1 = 0;
-                  while (temp1 == 0) {
-                    char z1 = Serial.read();
-                    if (z1 == 'B'){
-                      turnOffLight(0);
-                      Serial.write('D');
-                      temp1++;
-                    }                    
-                  }
-                  temp0++;
-                } else if (y == 'E') {
-                  turnOnLight(1);
-                  Serial.write('A');
-                  int temp2 = 0;
-                  while (temp2 == 0) {
-                    char z2 = Serial.read();
-                    if (z2 == 'B'){
-                      turnOffLight(1);
-                      Serial.write('D');
-                      temp2++;
-                    }
-                  }
-                  temp0++;
-                } else if (y == 'S') {
-                  turnOnLight(2);
-                    Serial.write('A');
+                startTime = millis();
+                bool validLight = false;
+                int lightIndex = -1;
 
-                    int temp3 = 0;
-                    while (temp3 == 0) {
-                      char z3 = Serial.read();
-                      if (z3 == 'B'){
-                        turnOffLight(2);
-                        Serial.write('D');
-                        temp3++;
-                      }
+                // Map light directions to indices: N=0, E=1, S=2, W=3
+                while (!validLight && (millis() - startTime < timeout)) {
+                    if (Serial.available() > 0) {
+                        char direction = Serial.read();
+                        Serial.print("DEBUG: Received direction: ");
+                        Serial.println(direction);
+                        switch (direction) {
+                            case 'N': lightIndex = 0; break;
+                            case 'E': lightIndex = 1; break;
+                            case 'S': lightIndex = 2; break;
+                            case 'W': lightIndex = 3; break;
+                            default: continue;
+                        }
+                        validLight = true;
                     }
-                  temp0++;
-                } else if (y == 'W') {
-                  turnOnLight(3);
-                    Serial.write('A');
+                }
 
-                    int temp4 = 0;
-                    while (temp4 == 0) {
-                      char z4 = Serial.read();
-                      if (z4 == 'B'){
-                        turnOffLight(3);
-                        Serial.write('D');
-                        temp4++;
-                      }
+                if (!validLight) {
+                    Serial.println("DEBUG: Error: Timeout or no valid direction");
+                    Serial.write('E');
+                    return;
+                }
+
+                turnOnLight(lightIndex);
+                Serial.write('A');
+
+                startTime = millis();
+                receivedB = false;
+                while (!receivedB && (millis() - startTime < timeout)) {
+                    if (Serial.available() > 0) {
+                        char x = Serial.read();
+                        if (x == 'B') {
+                            turnOffLight(lightIndex);
+                            receivedB = true;
+                        }
                     }
-                  temp0++;
-                } 
-              }
-            
-            break;
+                }
+
+                if (!receivedB) {
+                    Serial.println("DEBUG: Error: Timeout waiting for B");
+                    Serial.write('E');
+                    turnOffLight(lightIndex);
+                    return;
+                }
+
+                Serial.println("DEBUG: Single capture mode complete");
+                Serial.write('D');
+                break;
+
+            default:
+                Serial.print("DEBUG: Error: Invalid command: ");
+                Serial.println(command);
+                Serial.write('E');
+                break;
         }
     }
 }
