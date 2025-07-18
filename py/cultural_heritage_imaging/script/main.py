@@ -21,7 +21,7 @@ import os
 from tifffile import imwrite
 
 class CameraController:
-    def __init__(self, serial_port='COM5', baud_rate=9600):
+    def __init__(self, serial_port='COM6', baud_rate=9600):
         """
         Constructor of the class. Initializes the camera, sets the exposure mode to manual,
         disables auto-gain and auto exposure target gray, and sets the exposure to default.
@@ -152,7 +152,8 @@ class CameraController:
             else:
                 filename = CameraController.format_filename("Image", light)
                 try:
-                    image_converted = image.Convert(PySpin.PixelFormat_RGB8, PySpin.HQ_LINEAR)
+                    image_converted = image.Convert(PySpin.PixelFormat_Mono8, PySpin.HQ_LINEAR)
+                    image_converted.Save(filename)
                     numpy_array = image_converted.GetNDArray()
                     print(f"Image array shape: {numpy_array.shape}")
                     imwrite(filename, numpy_array)

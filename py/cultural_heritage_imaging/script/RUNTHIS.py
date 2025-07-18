@@ -1,10 +1,10 @@
 # Spinnaker camera init
-import serial
+import os
 import sys
 import time
+
 import PySpin
-import os
-from tifffile import imwrite
+import serial
 
 #Gain and exposure values: 12801 exposure, gain = 0, gamma = 1.
 
@@ -24,7 +24,7 @@ while (b):
         b = True
 
 # Initializes serial interface with arduino, 9600 baud rate
-arduino = serial.Serial('COM3', 9600, timeout=1)
+arduino = serial.Serial('COM6', 9600, timeout=1)
 arduino.setDTR(False)
 
 # Waits for 0.2 seconds for serial interface to connect
@@ -54,14 +54,14 @@ cam = cam_list.GetByIndex(0)
 def set_exposure(nodemap, exposure_time):
     try:
         
-        #turn off auto exposure
+        # Turn off auto exposure
         exposure_auto = PySpin.CEnumerationPtr(nodemap.GetNode('ExposureAuto'))
         if PySpin.IsAvailable(exposure_auto) and PySpin.IsWritable(exposure_auto):
             exposure_auto_off = exposure_auto.GetEntryByName('Off')
             if PySpin.IsAvailable(exposure_auto_off) and PySpin.IsReadable(exposure_auto_off):
                 exposure_auto.SetIntValue(exposure_auto_off.GetValue())
         
-        #Set the exposure time to the value of exposure_time, which was passed into the function
+        # Set the exposure time to the value of exposure_time, which was passed into the function
         exposure_time_node = PySpin.CFloatPtr(nodemap.GetNode('ExposureTime'))
         if PySpin.IsAvailable(exposure_time_node) and PySpin.IsWritable(exposure_time_node):
             exposure_bounds = [exposure_time_node.GetMin(), exposure_time_node.GetMax()]
@@ -84,7 +84,7 @@ def set_gain(nodemap, gain_value):
             if PySpin.IsAvailable(gain_auto_off) and PySpin.IsReadable(gain_auto_off):
                 gain_auto.SetIntValue(gain_auto_off.GetValue())
         
-        #Set the gain to the value of gain_value, which was passed into the function
+        # Set the gain to the value of gain_value, which was passed into the function
         gain_node = PySpin.CFloatPtr(nodemap.GetNode('Gain'))
         if PySpin.IsAvailable(gain_node) and PySpin.IsWritable(gain_node):
             gain_bounds = [gain_node.GetMin(), gain_node.GetMax()]
@@ -123,8 +123,12 @@ def capture_image(camera):
         
         # Get a list of nodes to use to set camera settings
         nodemap = camera.GetNodeMap()
+        # Set pixel format to Mono8
+        pixel_format = PySpin.CEnumerationPtr(nodemap.GetNode('PixelFormat'))
+        mono8 = pixel_format.GetEntryByName('Mono8')  # Or 'RGB8' if using color camera
+        pixel_format.SetIntValue(mono8.GetValue())
         
-        #Hardcode exposure, gain, and gamma values. Exposure is set to 12801 microseconds
+        # Hardcode exposure, gain, and gamma values. Exposure is set to 12801 microseconds
         set_exposure(nodemap, 12801) #This integer sets the exposure value in microseconds
         set_gain(nodemap, 0)
         set_gamma(nodemap, 1)
@@ -136,17 +140,21 @@ def capture_image(camera):
         
         #Captures the next image
         image = camera.GetNextImage()
-            
+        print("[DEBUG] Image acquired.")
+
         #Check statement to ensure that the image was captured
         if image.IsIncomplete():
             print(f'Image incomplete with status {image.GetImageStatus()}')
-        else:        
-            
+        else:
             #saves the image with the appropriate file format
             filename = format_filename()
-            image.Save(filename)
-           
-        #end acquisition and de-initialize the camera object
+            if filename is None:
+                print("[INFO] Skipping image save.")
+            else:
+                image.Save(filename)
+                print("[DEBUG] Image saved.")
+
+        #End acquisition and de-initialize the camera object
         image.Release()
         camera.EndAcquisition()
         camera.DeInit()
@@ -159,41 +167,56 @@ def capture_image(camera):
         del camera
         print(f'Image saved successfully')
 
-#Function format_filename() formats the .tif file to be saved, based on the type of image
-#captured: either flat fielding, mirror ball (calibration), or object. This is for easy transfer
-#into the 3D processing software. 
+# Function format_filename() formats the .tif file to be saved, based on the type of image
+# captured: either flat fielding, mirror ball (calibration), or object. This is for easy transfer
+# into the 3D processing software.
 def format_filename():
-    
-    #Vector to set the directions of the LEDs
     inc_map = {
         1: "north",
         2: "east",
         3: "south",
         4: "west",
     }
-    
-    #corresponds to a flat-field image    
+
     if typeIm == 'A':
         strng = 'flat_' + inc_map[inc]
-            
-    #corresponds to a mirror-ball image
     elif typeIm == 'B':
         strng = 'calibration_' + inc_map[inc]
-            
-    #corresponds to an object image
     else:
         strng = 'target_' + inc_map[inc]
-    
-    # Check if 'Output Images' directory exists, and create it if it doesn't
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     output_dir = os.path.join(script_dir, "Output Images")
     os.makedirs(output_dir, exist_ok=True)
-    
-    #Save the filename to the output directory, and name it according to the image type and direction
-    fileName = os.path.join(output_dir, strng)
-    fileName += '.tiff'
-    return fileName
-    
+
+    base_filename = os.path.join(output_dir, strng)
+    file_path = base_filename + '.tiff'
+
+    if os.path.exists(file_path):
+        print(f"\n[WARNING] File already exists: {file_path}")
+        while True:
+            choice = input("Overwrite (O), Auto-Rename (R), or Cancel (C)? [O/R/C]: ").strip().upper()
+            if choice == 'O':
+                break
+            elif choice == 'R':
+                # Auto-increment filename
+                counter = 1
+                while True:
+                    new_file_path = f"{base_filename}_{counter}.tiff"
+                    if not os.path.exists(new_file_path):
+                        file_path = new_file_path
+                        break
+                    counter += 1
+                break
+            elif choice == 'C':
+                print("Cancelled image save.")
+                return None
+            else:
+                print("Invalid input. Please enter O, R, or C.")
+
+    print(f"[DEBUG] Saving image to: {file_path}")
+    return file_path
+
 
 # Function 'serialCom' takes false boolean, and reads serial input from Arduino. Upon turning on a light, 
 # the Arduino sends character 'A' over serial interface. Once 'A' is read in serialCom, it calls capture_image()
@@ -202,28 +225,28 @@ def serialCom(finish):
     global inc
     while not (finish):
     
-        #Read serial data from the arduino
+        # Read serial data from the arduino
         x = arduino.read()
         if x == b'A':
             
-            #Once the Arduino sends an 'A', the camera is triggered to capture an image
+            # Once the Arduino sends an 'A', the camera is triggered to capture an image
             capture_image(cam)
             time.sleep(0.7)  # This line controls time between captures
             
-            #Write a 'B' to the arduino to move on to the next light
+            # Write a 'B' to the arduino to move on to the next light
             arduino.write(('B').encode())
             
-            #The inc variable is used to encode the direction into the file naming of the saved image
+            # The inc variable is used to encode the direction into the file naming of the saved image
             inc += 1
             
-        #The other character that the arduino will send is a 'D', which indicates that imaging is complete. 
+        # The other character that the arduino will send is a 'D', which indicates that imaging is complete.
         elif x == b'D':
             finish = True
             
     print("Done Imaging.")
     return finish
 
-#Function to prompt the user to either end or continue the imaging session
+# Function to prompt the user to either end or continue the imaging session
 def imageAgain():
     print("Image again? [Y/n]")
     re = input(">> ").strip().upper()
@@ -242,18 +265,18 @@ def imageAgain():
 
 def main():
 
-    #Sets the following as a global variables to be used in other functions
+    # Sets the following as a global variables to be used in other functions
     global cam
     global typeIm
     global inc
     
-    #Prompts the user to connect system to power, and plug in the 9V
+    # Prompts the user to connect system to power, and plug in the 9V
     print("\n")
     arduino.write(('C').encode())
     print("Connect system to power now.")
     print("\n")
 
-    #Boolean variable used for continous imaging without requiring re-running the python script
+    # Boolean variable used for continous imaging without requiring re-running the python script
     done = False
 
     try:
@@ -279,13 +302,13 @@ def main():
             command = input(">> ").strip().upper()
             if command == 'F':
                 
-                #Send the command to the arduino to turn on appropriate lights
+                # Send the command to the arduino to turn on appropriate lights
                 arduino.write(command.encode())
                 
-                #Call the function to serial interface with the arduino
+                # Call the function to serial interface with the arduino
                 serialCom(done)
                 
-                #Gives the option to end the imaging session and exit from the python script
+                # Gives the option to end the imaging session and exit from the python script
                 done = imageAgain()
 
             elif command == 'U':
