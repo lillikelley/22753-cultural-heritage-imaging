@@ -10,10 +10,10 @@ Written by:
     Sai Keshav Sasanapuri
     William Shuley
 
-For use in projects requiring customizable camera solutions.
 """
 
 import serial
+
 import sys
 import time
 import PySpin
@@ -27,9 +27,10 @@ class CameraController:
         disables auto-gain and auto exposure target gray, and sets the exposure to default.
         """
         # Initialize default exposure values
-        self.ORIGINAL_EXPOSURE = 0.7
+        self.ORIGINAL_EXPOSURE = 0.12
         self.selected_exposure_array = [self.ORIGINAL_EXPOSURE] * 16
-        self.acquisition_mode = 'SingleFrame'
+        self.acquisition_mode = None
+        self.image_type = None
 
         # Initialize serial connection
         try:
@@ -62,6 +63,14 @@ class CameraController:
             self.camera.GainAuto.SetValue(PySpin.GainAuto_Off)
             self.camera.AutoExposureTargetGreyValueAuto.SetValue(PySpin.AutoExposureTargetGreyValueAuto_Off)
 
+            # 1. Turn off Auto White Balance (stops color flickering)
+            if self.camera.BalanceWhiteAuto.GetAccessMode() == PySpin.RW:
+                self.camera.BalanceWhiteAuto.SetValue(PySpin.BalanceWhiteAuto_Off)
+
+            # 2. Turn off Gamma (stops "enhancing" the darks)
+            if self.camera.GammaEnable.GetAccessMode() == PySpin.RW:
+                self.camera.GammaEnable.SetValue(False)
+
         except PySpin.SpinnakerException as ex:
             print(f"Camera initialization failed: {ex}")
             self.cleanup()
@@ -74,19 +83,26 @@ class CameraController:
         """
         return seconds * 1_000_000
 
-    @staticmethod
-    def format_filename(base_name, light=None):
+    def format_filename(self, light_code):
         """
-        Format the image filename with timestamp and optional light direction.
+        Formats filename based on RUNTHIS.py logic: [Type]_[Direction].tiff
         """
-        parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
-        images_dir = os.path.join(parent_dir, "images")
-        if not os.path.exists(images_dir):
-            os.makedirs(images_dir)
-        current_time = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
-        if light:
-            return os.path.join(images_dir, f"{base_name}_{light}_captured_at_{current_time}.tif")
-        return os.path.join(images_dir, f"{base_name}_captured_at_{current_time}.tif")
+        # Map letters to full names
+        direction_map = {'N': "north", 'E': "east", 'S': "south", 'W': "west"}
+
+        # Map user selection to prefix
+        type_map = {'A': 'flat', 'B': 'calibration', 'C': 'target'}
+
+        prefix = type_map.get(self.image_type, 'image')
+        direction = direction_map.get(light_code, 'unknown')
+
+        # Save to the "images" directory one level up
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # ".." means go up one folder
+        output_dir = os.path.abspath(os.path.join(script_dir, "..", "images"))
+        os.makedirs(output_dir, exist_ok=True)
+
+        return os.path.join(output_dir, f"{prefix}_{direction}.tiff")
 
     @staticmethod
     def image_again():
@@ -128,98 +144,190 @@ class CameraController:
         self.arduino.flush()
         print(f"Set PWM to {pwm_value}")
 
+    def manual_light_control(self):
+        """
+        Manually toggle a light on, wait for user input, then turn it off.
+        FIXED: Explicitly waits for Arduino 'Done' signal to prevent bugs.
+        """
+        print("Manual Mode: Enter Light (N, S, E, W) to toggle ON.")
+        print("Enter 'Q' to return to main menu.")
+
+        while True:
+            # Standard map (Since you reflashed Arduino, logic matches hardware)
+            light_map = {'N': 'N', 'E': 'E', 'S': 'S', 'W': 'W'}
+
+            user_input = input("Light >> ").strip().upper()
+
+            if user_input == 'Q':
+                break
+
+            if user_input in light_map:
+                physical_command = light_map[user_input]
+
+                # 1. Turn ON
+                self.arduino.write('U'.encode())
+                self.arduino.flush()
+                time.sleep(0.1)
+                self.arduino.write(physical_command.encode())
+                self.arduino.flush()
+
+                print(f"Attempting to turn on {user_input}...")
+
+                # 2. Wait for 'A' (Confirmation)
+                start_time = time.time()
+                light_is_on = False
+                while time.time() - start_time < 5:
+                    if self.arduino.in_waiting:
+                        resp = self.arduino.read()
+                        if resp == b'L':
+                            if self.arduino.in_waiting: self.arduino.read()
+                            continue
+                        if resp == b'A':
+                            light_is_on = True
+                            break
+
+                if light_is_on:
+                    print(f"\n>>> LIGHT {user_input} IS ON <<<")
+                    input("Press [ENTER] to turn light OFF...")
+
+                    # 3. Turn OFF
+                    self.arduino.write('B'.encode())
+                    self.arduino.flush()
+
+                    # --- PROTOCOL FIX: EAT THE 'D' ---
+                    # We loop until we catch the 'D' from the Arduino.
+                    # This ensures the buffer is 100% empty before we loop again.
+                    timeout_d = time.time() + 3.0
+                    got_d = False
+                    while time.time() < timeout_d:
+                        if self.arduino.in_waiting:
+                            d_char = self.arduino.read()
+                            if d_char == b'D':
+                                got_d = True
+                                break
+
+                    if not got_d:
+                        print("Warning: Arduino did not send 'Done' signal.")
+                    else:
+                        print(f"Light {user_input} turned OFF (Confirmed).\n")
+                    # ---------------------------------
+                else:
+                    print("Error: Arduino did not confirm light status.\n")
+                    self.arduino.write('R'.encode())
+            else:
+                print("Invalid input.")
+
     def show_help(self):
         """
         Display help message with available commands.
         """
         print("\nAvailable Commands:")
-        print("  F: Four-capture mode (captures images with all four lights: N, E, S, W)")
-        print("  U: Single-capture mode (captures one image with a specified light: N, S, E, or W)")
-        print("  P: Set PWM value for light brightness (0-255)")
-        print("  R: Reset Arduino state (turns off all lights, resets light sequence)")
-        print("  H: Show this help message")
-        print("  Q: Quit the program\n")
+        print("  F: Four-capture mode (N, E, S, W)")
+        print("  U: Single-capture mode")
+        print("  M: Manual Light Toggle (Turn lights on without camera)")
+        print("  P: Set PWM value")
+        print("  R: Reset Arduino")
+        print("  H: Help")
+        print("  Q: Quit\n")
 
     def capture_image(self, light=None):
         """
-        Capture and save an image with the specified light.
+        Capture and save an image with the specified lighting condition.
         """
         try:
             self.camera.BeginAcquisition()
             image = self.camera.GetNextImage()
+
             if image.IsIncomplete():
-                print(f'Image incomplete with status {image.GetImageStatus()}')
+                print(f"Image incomplete with status {image.GetImageStatus()}")
             else:
-                filename = CameraController.format_filename("Image", light)
+                filename = self.format_filename(light)
                 try:
-                    image_converted = image.Convert(PySpin.PixelFormat_RGB8, PySpin.HQ_LINEAR)
-                    numpy_array = image_converted.GetNDArray()
-                    print(f"Image array shape: {numpy_array.shape}")
+                    # Convert to NumPy array for saving
+                    numpy_array = image.GetNDArray()                    # print(f"Image array shape: {numpy_array.shape}")
+
                     imwrite(filename, numpy_array)
                     print(f"Image saved successfully at {filename}")
                 except Exception as ex:
                     print(f"Failed to save image at {filename}: {ex}")
+
             image.Release()
             self.camera.EndAcquisition()
+
         except PySpin.SpinnakerException as ex:
             print(f"Spinnaker Exception: {ex}")
 
     def serial_com(self, mode='U', light=None):
         """
-        Handle serial communication for image capture.
+        Handle serial communication.
+        FIXED:
+          - 'U' Mode: Waits for 'D' after every capture.
+          - 'F' Mode: Only waits for 'D' at the very end (after West).
         """
+        # 1. Clean the mailbox (Buffer)
+        self.arduino.reset_input_buffer()
+
         finish = False
-        light_map = {0: 'N', 1: 'E', 2: 'S', 3: 'W'}
-        captured = False  # Track if capture occurred
+        captured = False
+
         if mode == 'F':
-            lights = ['N', 'S', 'E', 'W']
-            for light in lights:
-                self.arduino.write(light.encode())
-                self.arduino.flush()
+            lights = ['N', 'E', 'S', 'W']
+
+            # F-Mode Loop
+            for light_name in lights:
+                # Note: In F-mode, we do NOT send the light name.
+                # The Arduino advances automatically. We just wait for 'A'.
+
+                # 2. Wait for Ready ('A')
                 start_time = time.time()
                 while True:
                     if time.time() - start_time > 10:
-                        print(f"Timeout waiting for Arduino response for light {light}")
+                        print(f"Timeout waiting for light {light_name}")
                         return True, False
+
                     x = self.arduino.read()
-                    if not x:
-                        continue
-                    print(f"DEBUG: Received from Arduino: {x}")
-                    if x == b'L':
-                        if self.arduino.in_waiting > 0:
-                            light_index = self.arduino.read()[0]
-                            print(f"Arduino confirmed light {light_map.get(light_index, 'Unknown')} (index {light_index})")
+                    if not x: continue
+
+                    if x == b'L':  # Index confirmation
+                        if self.arduino.in_waiting: self.arduino.read()
                         continue
                     elif x == b'A':
-                        self.capture_image(light)
-                        print(f"Capture done for light {light}")
+                        # 3. Capture
+                        self.capture_image(light_name)
+                        print(f"Capture done for light {light_name}")
                         time.sleep(1.0)
+
+                        # 4. Next Light (Send 'B')
                         self.arduino.write('B'.encode())
                         self.arduino.flush()
+
                         captured = True
-                        break
-                    elif x == b'D':
-                        print(f"Warning: Received unexpected D from Arduino for light {light} before capture")
-                        return True, False
+                        break  # Break inner loop, move to next light
                     elif x == b'E':
-                        print(f"Error received from Arduino for light {light}")
                         return True, False
-        else:
+
+            # 5. AFTER all 4 lights, consume the final 'D' (Done)
+            # The Arduino sends this only once after West is finished.
+            timeout_d = time.time() + 2.0
+            while time.time() < timeout_d:
+                if self.arduino.in_waiting:
+                    if self.arduino.read() == b'D':
+                        break
+
+        else:  # Single Mode ('U')
             self.arduino.write(light.encode())
             self.arduino.flush()
+
             start_time = time.time()
             while True:
                 if time.time() - start_time > 10:
-                    print(f"Timeout waiting for Arduino response for light {light}")
+                    print(f"Timeout waiting for light {light}")
                     return True, False
                 x = self.arduino.read()
-                if not x:
-                    continue
-                print(f"DEBUG: Received from Arduino: {x}")
+                if not x: continue
+
                 if x == b'L':
-                    if self.arduino.in_waiting > 0:
-                        light_index = self.arduino.read()[0]
-                        print(f"Arduino confirmed light {light_map.get(light_index, 'Unknown')} (index {light_index})")
+                    if self.arduino.in_waiting: self.arduino.read()
                     continue
                 elif x == b'A':
                     self.capture_image(light)
@@ -227,14 +335,22 @@ class CameraController:
                     time.sleep(1.0)
                     self.arduino.write('B'.encode())
                     self.arduino.flush()
+
+                    # 6. In 'U' mode, we MUST wait for 'D' immediately
+                    timeout_d = time.time() + 2.0
+                    while time.time() < timeout_d:
+                        if self.arduino.in_waiting:
+                            if self.arduino.read() == b'D':
+                                break
+
                     captured = True
                     break
                 elif x == b'D':
-                    print(f"Warning: Received unexpected D from Arduino for light {light} before capture")
+                    print(f"Warning: Received unexpected D for light {light}")
                     return True, False
                 elif x == b'E':
-                    print(f"Error received from Arduino for light {light}")
                     return True, False
+
         return finish, captured
 
     def cleanup(self):
@@ -260,6 +376,15 @@ class CameraController:
         done = False
         try:
             while not done:
+                print("\nInput type:\nA: Flat-fielding\nB: Calibration\nC: Target Object")
+                valid_type = False
+                while not valid_type:
+                    type_input = input(">> ").strip().upper()
+                    if type_input in ('A', 'B', 'C'):
+                        self.image_type = type_input
+                        valid_type = True
+                    else:
+                        print("Incorrect entry. Please enter A, B, or C.")
                 print("Enter a command (H for help):")
                 command = input(">> ").strip().upper()
                 if command == 'F':
@@ -277,6 +402,8 @@ class CameraController:
                         done = finish or (CameraController.image_again() if captured else False)
                     else:
                         print("Incorrect entry, retry.")
+                elif command == 'M':
+                    self.manual_light_control()
                 elif command == 'P':
                     try:
                         pwm_value = int(input("Enter PWM value (0-255): "))
