@@ -1,12 +1,16 @@
 int PWM = 3;
-int EN1 = 8;
-int EN2 = 7;
-int EN3 = 6;
-int EN4 = 5;
+int EN1 = 8;    // East
+int EN2 = 7;    // West
+int EN3 = 6;    // North
+int EN4 = 5;    // South
 int EN[] = {EN1, EN2, EN3, EN4};
-const int numLights = 4; // Number of lights
-int currentLight = 0; // Start with the first light
+const int numLights = 4;
+int currentLight = 0;
 bool imagingComplete = false;
+
+// Index i in EN[]/the F-loop maps to this letter. Must stay in sync
+// with the Python side: arduino_controller lights = ['E','W','N','S'].
+const char LIGHT_LETTER[] = {'E', 'W', 'N', 'S'};
 
 void turnOnLight(int lightIndex) {
     digitalWrite(EN[lightIndex], HIGH);
@@ -16,15 +20,30 @@ void turnOffLight(int lightIndex) {
     digitalWrite(EN[lightIndex], LOW);
 }
 
+// Block until at least one byte is available, then return it.
+// Replaces bare Serial.read(), which returns -1 on an empty buffer.
+char readBlocking() {
+    while (Serial.available() < 1) {
+        // spin
+    }
+    return Serial.read();
+}
+
 void setup() {
-    Serial.begin(9600); // Start serial communication
+    Serial.begin(9600);
+
     for (int i = 0; i < numLights; i++) {
-      pinMode(EN[i], OUTPUT); // Set each light pin to output
+        pinMode(EN[i], OUTPUT);
     }
+
     for (int j = 0; j < numLights; j++) {
-      digitalWrite(EN[j], LOW); // Set PWM to 0% DC
+        digitalWrite(EN[j], LOW);
     }
-    analogWrite(PWM, 200);
+
+    // Raise PWM frequency on Timer 2 (Pin 3) to ~31 kHz
+    TCCR2B = (TCCR2B & 0b11111000) | 0x01;
+
+    analogWrite(PWM, 100);
 }
 
 void loop() {
@@ -33,98 +52,120 @@ void loop() {
         currentLight = 0;
 
         switch (command) {
-            case 'C': // Connection established
+
+            //  CONNECTION RESET
+            case 'C': {
                 for (int j = 0; j < numLights; j++) {
-                  digitalWrite(EN[j], LOW); // Set PWM to 0% DC
+                    digitalWrite(EN[j], LOW);
                 }
-                analogWrite(PWM, 200);
-                break;
-
-            case 'F': // Four-capture mode
-              while (currentLight < numLights) {
-                turnOnLight(currentLight);
-                Serial.write('A');
-
-                int temp = 0;
-                while (temp == 0) {
-                  char x = Serial.read();
-                  if (x == 'B') {
-                    turnOffLight(currentLight);
-                    temp++; 
-                  } 
-                }
-
-                currentLight++;
-
-              }
-              
-              Serial.write('D');
-              imagingComplete = true;
-            
+                analogWrite(PWM, 100);
+            }
             break;
 
-            case 'U': // Single capture mode
-              int temp0 = 0;
-              while (temp0 == 0) {
-                char y = Serial.read();
-                
-                if (y == 'N') {
-                  turnOnLight(0);
-                  Serial.write('A');
-                  int temp1 = 0;
-                  while (temp1 == 0) {
-                    char z1 = Serial.read();
-                    if (z1 == 'B'){
-                      turnOffLight(0);
-                      Serial.write('D');
-                      temp1++;
-                    }                    
-                  }
-                  temp0++;
-                } else if (y == 'E') {
-                  turnOnLight(1);
-                  Serial.write('A');
-                  int temp2 = 0;
-                  while (temp2 == 0) {
-                    char z2 = Serial.read();
-                    if (z2 == 'B'){
-                      turnOffLight(1);
-                      Serial.write('D');
-                      temp2++;
-                    }
-                  }
-                  temp0++;
-                } else if (y == 'S') {
-                  turnOnLight(2);
-                    Serial.write('A');
+            //  RESET (lights off, PWM back to default)
+            case 'R': {
+                for (int j = 0; j < numLights; j++) {
+                    digitalWrite(EN[j], LOW);
+                }
+                analogWrite(PWM, 100);
+            }
+            break;
 
-                    int temp3 = 0;
-                    while (temp3 == 0) {
-                      char z3 = Serial.read();
-                      if (z3 == 'B'){
-                        turnOffLight(2);
-                        Serial.write('D');
-                        temp3++;
-                      }
-                    }
-                  temp0++;
-                } else if (y == 'W') {
-                  turnOnLight(3);
-                    Serial.write('A');
+            //  PWM BRIGHTNESS
+            case 'P': {
+                // Wait for the value byte to actually arrive before
+                // reading it. Without this, Serial.read() can return
+                // -1 and analogWrite gets garbage.
+                int value = readBlocking();
+                analogWrite(PWM, value);
+            }
+            break;
 
-                    int temp4 = 0;
-                    while (temp4 == 0) {
-                      char z4 = Serial.read();
-                      if (z4 == 'B'){
-                        turnOffLight(3);
-                        Serial.write('D');
-                        temp4++;
-                      }
+            //  FOUR-CAPTURE MODE
+            case 'F': {
+                for (int i = 0; i < numLights; i++) {
+
+                    // Turn on the correct light
+                    turnOnLight(i);
+
+                    // Allow LED to reach full brightness
+                    delay(100);
+
+                    // Tell Python "ready to capture", then echo which
+                    // light is lit so the host can verify phase.
+                    Serial.write('A');
+                    Serial.write(LIGHT_LETTER[i]);
+
+                    // Wait for Python to send 'B'
+                    while (true) {
+                        if (Serial.available() > 0) {
+                            char incoming = Serial.read();
+                            if (incoming == 'B') {
+                                break;
+                            }
+                        }
                     }
-                  temp0++;
-                } 
-              }
-            
+
+                    // Turn off the light
+                    turnOffLight(i);
+                }
+
+                // Tell Python the whole sequence is done
+                Serial.write('D');
+                imagingComplete = true;
+            }
+            break;
+
+            //  SINGLE-CAPTURE MODE
+            case 'U': {
+
+                // Wait for Python to send E/W/N/S
+                char dir = 0;
+                while (true) {
+                    if (Serial.available() > 0) {
+                        char incoming = Serial.read();
+                        if (incoming == 'E' || incoming == 'W' ||
+                            incoming == 'N' || incoming == 'S') {
+                            dir = incoming;
+                            break;
+                        }
+                    }
+                }
+
+                // Map direction to light index
+                int idx = -1;
+                if (dir == 'E') idx = 0;
+                else if (dir == 'W') idx = 1;
+                else if (dir == 'N') idx = 2;
+                else if (dir == 'S') idx = 3;
+
+                // Turn on selected light
+                turnOnLight(idx);
+
+                // Allow LED to reach full brightness
+                delay(100);
+
+                // Tell Python "ready", then echo the lit light so the
+                // host can verify phase (framed handshake).
+                Serial.write('A');
+                Serial.write(dir);
+
+                // Wait for Python to send 'B'
+                while (true) {
+                    if (Serial.available() > 0) {
+                        char incoming = Serial.read();
+                        if (incoming == 'B') {
+                            break;
+                        }
+                    }
+                }
+
+                // Turn off light
+                turnOffLight(idx);
+
+                // Tell Python "done"
+                Serial.write('D');
+            }
             break;
         }
     }
