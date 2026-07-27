@@ -1,9 +1,10 @@
-int PWM = 3;
-int EN1 = 8;    // East
-int EN2 = 7;    // West
-int EN3 = 6;    // North
-int EN4 = 5;    // South
+int PWM = 9;
+int EN1 = 6;    // East (physically on pin 6)
+int EN2 = 5;    // West (physically on pin 5)
+int EN3 = 8;    // North (physically on pin 8)
+int EN4 = 7;    // South (physically on pin 7)
 int EN[] = {EN1, EN2, EN3, EN4};
+
 const int numLights = 4;
 int currentLight = 0;
 bool imagingComplete = false;
@@ -40,10 +41,13 @@ void setup() {
         digitalWrite(EN[j], LOW);
     }
 
-    // Raise PWM frequency on Timer 2 (Pin 3) to ~31 kHz
-    TCCR2B = (TCCR2B & 0b11111000) | 0x01;
+    //Raise PWM frequency on Timer 2 (Pin 3) to ~31 kHz
+    //TCCR2B = (TCCR2B & 0b11111000) | 0x01;
 
+    pinMode(PWM, OUTPUT);
     analogWrite(PWM, 100);
+    // digitalWrite(3, LOW);
+
 }
 
 void loop() {
@@ -52,15 +56,6 @@ void loop() {
         currentLight = 0;
 
         switch (command) {
-
-            //  CONNECTION RESET
-            case 'C': {
-                for (int j = 0; j < numLights; j++) {
-                    digitalWrite(EN[j], LOW);
-                }
-                analogWrite(PWM, 100);
-            }
-            break;
 
             //  RESET (lights off, PWM back to default)
             case 'R': {
@@ -84,12 +79,11 @@ void loop() {
             //  FOUR-CAPTURE MODE
             case 'F': {
                 for (int i = 0; i < numLights; i++) {
-
                     // Turn on the correct light
                     turnOnLight(i);
 
                     // Allow LED to reach full brightness
-                    delay(100);
+                    delay(1500);
 
                     // Tell Python "ready to capture", then echo which
                     // light is lit so the host can verify phase.
@@ -108,10 +102,12 @@ void loop() {
 
                     // Turn off the light
                     turnOffLight(i);
+
                 }
 
                 // Tell Python the whole sequence is done
                 Serial.write('D');
+
                 imagingComplete = true;
             }
             break;
